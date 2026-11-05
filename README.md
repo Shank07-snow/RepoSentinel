@@ -1,85 +1,91 @@
 # RepoSentinel
 
-**Predictive Software Supply Chain Risk Intelligence Platform** — an engineering foundation for package intelligence focused initially on the Python ecosystem (PyPI).
+**Predictive Software Supply Chain Risk Intelligence Platform** for the Python package ecosystem.
 
-RepoSentinel is designed as a decision-support layer, not a replacement for vulnerability scanners. It separates confirmed security findings from any future-risk estimates.
+RepoSentinel is designed as a decision-support layer, not a replacement for vulnerability scanners. It keeps confirmed advisory data separate from any future-risk estimates.
 
-## Current milestone: data-ingestion foundation
+> **Status:** early API foundation. No predictive model is currently trained or validated. The proposed 90-day horizon remains a research hypothesis.
 
-- FastAPI service with health, ingestion, and package-inspection endpoints
-- PostgreSQL persistence via SQLAlchemy
-- PyPI project metadata and release ingestion
-- OSV advisory ingestion
-- Bounded HTTP response handling, request timeouts, and input validation
-- Docker Compose for repeatable local development
+## What works in this milestone
 
-> This repository is an early development milestone, not a production-ready security product. The 90-day prediction horizon is a research hypothesis and is not yet validated.
+- FastAPI service with interactive OpenAPI documentation
+- Live PyPI package metadata lookup
+- OSV advisory lookup, optionally filtered by package version
+- Input validation, upstream timeouts, bounded response sizes, and safe error handling
+- Docker deployment configuration and Render blueprint
 
-## Architecture
+## Architecture direction
 
 ```text
-PyPI JSON API ----\
-                   -> FastAPI ingestion -> PostgreSQL
-OSV API ----------/          |
-                              -> package/release/advisory records
-
-Planned: deps.dev dependency graph, historical feature snapshots,
-temporal ML evaluation, explainability, Streamlit dashboard.
+PyPI JSON API ─────┐
+                  ├── FastAPI ingestion/API ── PostgreSQL (next milestone)
+OSV API ──────────┘             │
+                                └── package intelligence API
+                                      │
+                              Streamlit dashboard (planned)
 ```
 
 ## Run locally
 
-Requirements: Python 3.11+ and Docker Desktop with Docker Compose.
+Python 3.11+ is recommended.
 
-1. Copy `.env.example` to `.env`.
-2. Run `docker compose up --build`.
-3. Open [API docs](http://localhost:8000/docs).
-4. Check [health](http://localhost:8000/health).
-
-Ingest a package:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:8000/ingest/pypi/requests"
+```bash
+python -m venv .venv
+# Windows PowerShell: .venv\\Scripts\\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
-Inspect a package:
+Open:
+- API documentation: http://localhost:8000/docs
+- Health check: http://localhost:8000/health
 
-```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/packages/requests"
-```
+## API endpoints
 
-## API
-
-| Method | Route | Purpose |
+| Method | Endpoint | Description |
 |---|---|---|
-| GET | `/health` | API/database health |
-| POST | `/ingest/pypi/{package_name}` | Fetch PyPI metadata and OSV package advisories |
-| GET | `/packages/{package_name}` | Read stored package metadata |
+| GET | `/` | Service metadata |
+| GET | `/health` | Health check |
+| GET | `/packages/{package_name}` | Current PyPI project metadata |
+| GET | `/packages/{package_name}/advisories` | OSV advisories; optional `?version=x.y.z` |
+
+Example:
+```bash
+curl http://localhost:8000/packages/requests
+curl "http://localhost:8000/packages/requests/advisories?version=2.31.0"
+```
+
+## Deployment
+
+The repository includes a `Dockerfile` and `render.yaml`. To deploy on Render, create a new **Web Service** from this GitHub repository and select the Blueprint option if prompted. Render will build the Docker image and use `/health` as its health check.
+
+Do not expose this early API publicly for sensitive workloads. Authentication, rate limiting, persistence, observability, and production hardening are still pending.
 
 ## Data sources
 
 - [PyPI JSON API](https://docs.pypi.org/api/json/)
 - [OSV API](https://google.github.io/osv.dev/api/)
-- [deps.dev API](https://docs.deps.dev/) — planned for dependency graph ingestion
+- [deps.dev](https://docs.deps.dev/) — planned dependency graph source
+- [OpenSSF Scorecard](https://scorecard.dev/) — planned project health signals
 
-## Important limitations
-
-- Advisory ingestion is package-level in this initial milestone. It does **not** yet prove that a particular installed version is affected.
-- Version-range normalization and matching are a required next step.
-- No package code, build script, or installation script is executed.
-- The ingestion API has no authentication/rate limiting yet; do not expose it publicly as-is.
-- Future-risk prediction will only be implemented after historical label feasibility and chronological evaluation are established.
-
-## Roadmap
+## Research and engineering roadmap
 
 1. Version-aware OSV affected-range normalization
-2. Dependency graph ingestion and exposure analysis
-3. Reproducible historical ETL and feature snapshots
-4. Temporal dataset construction and leakage-safe validation
+2. Dependency graph ingestion and transitive exposure analysis
+3. Historical ETL and reproducible feature snapshots
+4. Temporal dataset construction and leakage-safe label validation
 5. Baseline models, calibration, and explainability
 6. Streamlit risk-intelligence dashboard
-7. Authentication, tests, CI, observability, and deployment hardening
+7. PostgreSQL persistence, tests, CI, authentication, and observability
+
+## Security principles
+
+- Never execute package code, build scripts, or installation scripts.
+- Treat upstream data as untrusted input.
+- Keep network timeouts and response-size limits.
+- Add SSRF protections before accepting user-supplied repository URLs.
 
 ## License
 
-No license has been selected yet. All rights remain with the repository owner.
+No license has been selected. All rights remain with the repository owner.
