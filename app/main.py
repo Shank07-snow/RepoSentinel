@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
+BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = BASE_DIR / "static"
 PYPI_URL = "https://pypi.org/pypi/{name}/json"
 OSV_URL = "https://api.osv.dev/v1/query"
 
@@ -18,6 +22,7 @@ app = FastAPI(
     description="Software supply-chain risk intelligence for the Python ecosystem.",
     version=APP_VERSION,
 )
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
 
@@ -28,7 +33,6 @@ class PackageSummary(BaseModel):
     project_url: str | None = None
     summary: str | None = None
     license: str | None = None
-    published_at: str | None = None
 
 
 class AdvisorySummary(BaseModel):
@@ -37,6 +41,7 @@ class AdvisorySummary(BaseModel):
     modified: str | None = None
     published: str | None = None
     aliases: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
 
 
 async def fetch_json(url: str, *, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -63,8 +68,13 @@ def validate_package_name(name: str) -> str:
     return normalized
 
 
-@app.get("/", tags=["meta"])
-async def root() -> dict[str, str]:
+@app.get("/", include_in_schema=False)
+async def dashboard() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/api", tags=["meta"])
+async def api_info() -> dict[str, str]:
     return {"name": "RepoSentinel API", "version": APP_VERSION, "docs": "/docs"}
 
 
@@ -100,11 +110,13 @@ async def package_advisories(
     data = await fetch_json(OSV_URL, payload=query)
     results = []
     for item in data.get("vulns", []):
+        refs = [ref.get("url") for ref in item.get("references", []) if ref.get("url")]
         results.append(AdvisorySummary(
             id=item.get("id", "UNKNOWN"),
             summary=item.get("summary"),
             modified=item.get("modified"),
             published=item.get("published"),
             aliases=item.get("aliases") or [],
+            references=refs[:5],
         ))
     return results
